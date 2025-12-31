@@ -9,7 +9,6 @@ import os
 # 設定網頁資訊
 st.set_page_config(page_title="AI 數字辨識系統", layout="centered")
 st.title("🔢 AI 多數字即時辨識系統")
-st.markdown("### 針對 4 與 9 進行辨識優化")
 st.write("請在黑框內寫數字，並讓數字之間保持一點距離。")
 
 # --- 1. 定義優化預處理函數 ---
