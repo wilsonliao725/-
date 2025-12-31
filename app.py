@@ -32,49 +32,61 @@ def get_model():
 
 model = get_model()
 
-# --- 畫板介面 ---
+# --- (前面的畫板程式碼) ---
 canvas_result = st_canvas(
     fill_color="rgba(255, 255, 255, 1)",
     stroke_width=15,
     stroke_color="#FFFFFF",
     background_color="#000000",
     height=300,
-    width=600, # 加寬畫板以便寫多個數字
+    width=600,
     drawing_mode="freedraw",
     key="canvas",
 )
 
-# --- 多數字辨識邏輯 ---
+# --- 關鍵修正：確保這裡有跑辨識 ---
 if canvas_result.image_data is not None:
-    # 轉為灰階並二值化
+    # 轉灰階並處理
     img = cv2.cvtColor(canvas_result.image_data.astype('uint8'), cv2.COLOR_RGBA2GRAY)
     _, thresh = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY)
     
-    # 尋找輪廓 (每一個數字就是一個輪廓)
+    # 尋找輪廓
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # 依照 X 座標從左到右排序輪廓
     digit_boxes = []
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
-        if w > 5 and h > 10: # 過濾掉太小的雜點
+        if w > 5 and h > 10: 
             digit_boxes.append((x, y, w, h))
     
+    # 依照 X 座標排序
     digit_boxes = sorted(digit_boxes, key=lambda b: b[0])
 
-    if digit_boxes:
+    if len(digit_boxes) > 0:
+        st.subheader("分析結果")
         results = []
-        # 在網頁上顯示切割出的數字預覽
-        cols = st.columns(len(digit_boxes))
+        cols = st.columns(len(digit_boxes)) # 依照數字數量產生欄位
         
         for i, (x, y, w, h) in enumerate(digit_boxes):
-            # 切割數字並加上 padding (讓它更像 MNIST 格式)
+            # 切割數字
             roi = img[y:y+h, x:x+w]
-            pad = max(w, h) // 2
+            # 加上邊框讓它更像訓練資料
+            pad = 20
             roi = cv2.copyMakeBorder(roi, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
             roi = cv2.resize(roi, (28, 28))
             
             # 預測
             img_input = roi.reshape(1, 28, 28, 1).astype('float32') / 255
             pred = model.predict(img_input, verbose=0)
-            digit = np.argmax
+            digit = np.argmax(pred)
+            results.append(str(digit))
+            
+            # 在網頁顯示小圖跟辨識結果
+            with cols[i]:
+                st.image(roi, width=60)
+                st.markdown(f"### **{digit}**")
+        
+        # 顯示整串數字
+        st.success(f"## 辨識整串數字為：{''.join(results)}")
+    else:
+        st.info("請在上方黑框寫字，AI 會自動偵測。")
