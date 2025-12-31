@@ -6,11 +6,31 @@ import numpy as np
 import cv2
 import os
 
-st.set_page_config(page_title="多數字辨識 AI", layout="centered")
-st.title("🔢 多數字即時辨識系統")
-st.write("請在黑框內寫下一串數字（例如 123），數字之間請保持一點距離。")
+st.set_page_config(page_title="多數字辨識優化版", layout="centered")
+st.title("🔢 AI 多數字即時辨識系統")
+st.write("優化了 4 與 9 的辨識率，請在下方書寫。")
 
-# --- 模型載入與自動訓練 ---
+# --- 1. 定義優化預處理函數 (修正重心偏移) ---
+def pre_process_digit(roi):
+    # 縮放到 20x20，保留邊界
+    h, w = roi.shape
+    if h > w:
+        new_h, new_w = 20, int(20 * w / h)
+    else:
+        new_h, new_w = int(20 * h / w), 20
+    roi_resized = cv2.resize(roi, (new_w, new_h))
+    
+    # 將 20x20 放入 28x28 的中心
+    final_img = np.zeros((28, 28), dtype=np.uint8)
+    offset_y = (28 - new_h) // 2
+    offset_x = (28 - new_w) // 2
+    final_img[offset_y:offset_y+new_h, offset_x:offset_x+new_w] = roi_resized
+    
+    # 正規化
+    input_data = final_img.reshape(1, 28, 28, 1).astype('float32') / 255.0
+    return input_data, final_img
+
+# --- 2. 模型載入 (提高訓練輪數以精準辨識 4/9) ---
 MODEL_PATH = 'mnist_model.h5'
 @st.cache_resource
 def get_model():
@@ -21,72 +41,18 @@ def get_model():
         model = models.Sequential([
             layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
             layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(64, (3, 3), activation='relu'), # 增加一層提高特徵抓取
             layers.Flatten(),
-            layers.Dense(64, activation='relu'),
+            layers.Dense(128, activation='relu'),
             layers.Dense(10, activation='softmax')
         ])
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-        model.fit(x_train, y_train, epochs=2, batch_size=128, verbose=0)
+        model.fit(x_train, y_train, epochs=5, batch_size=128, verbose=0) # 提高到 5 輪
         model.save(MODEL_PATH)
     return tf.keras.models.load_model(MODEL_PATH)
 
 model = get_model()
 
-# --- (前面的畫板程式碼) ---
+# --- 3. 畫板介面 (稍微加粗筆觸) ---
 canvas_result = st_canvas(
-    fill_color="rgba(255, 255, 255, 1)",
-    stroke_width=15,
-    stroke_color="#FFFFFF",
-    background_color="#000000",
-    height=300,
-    width=600,
-    drawing_mode="freedraw",
-    key="canvas",
-)
-
-# --- 關鍵修正：確保這裡有跑辨識 ---
-if canvas_result.image_data is not None:
-    # 轉灰階並處理
-    img = cv2.cvtColor(canvas_result.image_data.astype('uint8'), cv2.COLOR_RGBA2GRAY)
-    _, thresh = cv2.threshold(img, 50, 255, cv2.THRESH_BINARY)
-    
-    # 尋找輪廓
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    digit_boxes = []
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-        if w > 5 and h > 10: 
-            digit_boxes.append((x, y, w, h))
-    
-    # 依照 X 座標排序
-    digit_boxes = sorted(digit_boxes, key=lambda b: b[0])
-
-    if len(digit_boxes) > 0:
-        st.subheader("分析結果")
-        results = []
-        cols = st.columns(len(digit_boxes)) # 依照數字數量產生欄位
-        
-        for i, (x, y, w, h) in enumerate(digit_boxes):
-            # 切割數字
-            roi = img[y:y+h, x:x+w]
-            # 加上邊框讓它更像訓練資料
-            pad = 20
-            roi = cv2.copyMakeBorder(roi, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
-            roi = cv2.resize(roi, (28, 28))
-            
-            # 預測
-            img_input = roi.reshape(1, 28, 28, 1).astype('float32') / 255
-            pred = model.predict(img_input, verbose=0)
-            digit = np.argmax(pred)
-            results.append(str(digit))
-            
-            # 在網頁顯示小圖跟辨識結果
-            with cols[i]:
-                st.image(roi, width=60)
-                st.markdown(f"### **{digit}**")
-        
-        # 顯示整串數字
-        st.success(f"## 辨識整串數字為：{''.join(results)}")
-    else:
-        st.info("請在上方黑框寫字，AI 會自動偵測。")
+    fill_color="rgba(255, 255, 255, 1
