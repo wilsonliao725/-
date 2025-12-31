@@ -87,4 +87,36 @@ function startListen() {
     recognition.start();
     recognition.onresult = (event) => {
         const text = event.results[0][0].transcript;
-        // 使用 window.top.location 確保繞過 iframe
+        // 使用 window.top.location 確保繞過 iframe 限制傳值給 Streamlit
+        const url = new URL(window.top.location.href);
+        url.searchParams.set('voice_input', text);
+        window.top.location.href = url.href;
+    };
+}
+</script>
+<button onclick="startListen()" style="padding: 15px 30px; background-color: #ff4b4b; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%;">
+    開始語音辨識
+</button>
+"""
+components.html(speech_script, height=100)
+
+# 將轉換後的阿拉伯數字顯示在輸入框中
+st.text_input("語音識別結果：", value=voice_final, key="voice_result_display")
+
+# --- 3. 手寫辨識介面 (完全保留原始邏輯) ---
+st.subheader("✍️ 手寫辨識區域")
+canvas_result = st_canvas(fill_color="rgba(255, 255, 255, 1)", stroke_width=18, stroke_color="#FFFFFF", background_color="#000000", height=300, width=600, drawing_mode="freedraw", key="canvas")
+
+if canvas_result.image_data is not None:
+    img = cv2.cvtColor(canvas_result.image_data.astype('uint8'), cv2.COLOR_RGBA2GRAY)
+    _, thresh = cv2.threshold(img, 50, 255, thresh_binary := cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    digit_boxes = sorted([cv2.boundingRect(cnt) for cnt in contours if cv2.boundingRect(cnt)[2] > 5], key=lambda b: b[0])
+
+    if digit_boxes:
+        results = []
+        for x, y, w, h in digit_boxes:
+            processed_input, _ = pre_process_digit(img[y:y+h, x:x+w])
+            if processed_input is not None:
+                results.append(str(np.argmax(model.predict(processed_input, verbose=0))))
+        st.success(f"## 手寫辨識結果：{''.join(results)}")
